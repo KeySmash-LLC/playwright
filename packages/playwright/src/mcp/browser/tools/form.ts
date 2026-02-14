@@ -53,6 +53,7 @@ const fillForm = defineTabTool({
         response.addCode(`${locatorSource}.selectOption(${escapeWithQuotes(field.value)});`);
       }
     }
+    response.setIncludeSnapshot();
   },
 });
 
