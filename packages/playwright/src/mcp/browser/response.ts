@@ -24,6 +24,7 @@ import { scaleImageToFitMessage } from './tools/screenshot';
 import type { TabHeader } from './tab';
 import type { CallToolResult, ImageContent, TextContent } from '@modelcontextprotocol/sdk/types.js';
 import type { Context, FilenameTemplate } from './context';
+import type { DomState, DomStateResult } from './domState';
 
 export const requestDebug = debug('pw:mcp:request');
 
@@ -47,6 +48,7 @@ export class Response {
   private _context: Context;
   private _includeSnapshot: 'none' | 'full' | 'incremental' = 'none';
   private _includeSnapshotFileName: string | undefined;
+  private _domState: DomState | undefined;
 
   readonly toolName: string;
   readonly toolArgs: Record<string, any>;
@@ -122,6 +124,10 @@ export class Response {
   setIncludeFullSnapshot(includeSnapshotFileName?: string) {
     this._includeSnapshot = 'full';
     this._includeSnapshotFileName = includeSnapshotFileName;
+  }
+
+  setDomState(domState: DomState) {
+    this._domState = domState;
   }
 
   async serialize(): Promise<CallToolResult> {
@@ -209,6 +215,26 @@ export class Response {
       }
     }
 
+    // DOM State section
+    if (this._domState && tabSnapshot && this._includeSnapshot !== 'none') {
+      const result = await this._domState.update(
+        this._context.currentTabOrDie().page,
+        this._context,
+        this.toolName,
+        this.toolArgs,
+        tabSnapshot.ariaSnapshot,
+      );
+
+      if (result) {
+        const lines: string[] = [];
+        lines.push(`- DOM: ${this._computRelativeTo(result.domPath)}`);
+        lines.push(`- Accessibility tree: ${this._computRelativeTo(result.ariaPath)}`);
+        if (result.diffPath)
+          lines.push(`- Diff: ${this._computRelativeTo(result.diffPath)}`);
+        addSection('Browser State', lines);
+      }
+    }
+
     // Handle tab log
     const text: string[] = [];
     if (tabSnapshot?.consoleLink)
@@ -288,6 +314,7 @@ export function parseResponse(response: CallToolResult) {
   const tabs = sections.get('Open tabs');
   const page = sections.get('Page');
   const snapshot = sections.get('Snapshot');
+  const browserState = sections.get('Browser State');
   const events = sections.get('Events');
   const modalState = sections.get('Modal state');
   const codeNoFrame = code?.replace(/^```js\n/, '').replace(/\n```$/, '');
@@ -301,6 +328,7 @@ export function parseResponse(response: CallToolResult) {
     tabs,
     page,
     snapshot,
+    browserState,
     events,
     modalState,
     isError,
