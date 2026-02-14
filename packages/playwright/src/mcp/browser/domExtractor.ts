@@ -197,8 +197,9 @@ export const AIDomBuilderInjection = (): { html: string, iframeRefs: string[] } 
 
     /** Is this a noisy SVG attribute? */
     private _isSvgNoise(el: Element, attrName: string): boolean {
+      const tag = el.tagName.toUpperCase();
       return SVG_NOISE_ATTRS.has(attrName) &&
-        (el.tagName === 'PATH' || el.tagName === 'POLYGON');
+        (tag === 'PATH' || tag === 'POLYGON');
     }
   }
 
