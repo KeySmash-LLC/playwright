@@ -24,6 +24,7 @@ import { fileURLToPath } from 'url';
 import { logUnhandledError } from '../log';
 import { Tab } from './tab';
 import { outputFile, workspaceFile } from './config';
+import { DomState } from './domState';
 
 import type * as playwright from '../../../types/test';
 import type { FullConfig } from './config';
@@ -64,6 +65,7 @@ export class Context {
   readonly config: FullConfig;
   readonly sessionLog: SessionLog | undefined;
   readonly options: ContextOptions;
+  readonly domState: DomState;
   private _browserContextPromise: Promise<BrowserContextFactoryResult> | undefined;
   private _browserContextFactory: BrowserContextFactory;
   private _tabs: Tab[] = [];
@@ -86,6 +88,7 @@ export class Context {
     this.options = options;
     this._browserContextFactory = options.browserContextFactory;
     this._clientInfo = options.clientInfo;
+    this.domState = new DomState();
     testDebug('create context');
     Context._allContexts.add(this);
   }
@@ -259,6 +262,7 @@ export class Context {
   async dispose() {
     this._abortController.abort('MCP context disposed');
     await this.closeBrowserContext();
+    await this.domState.dispose();
     Context._allContexts.delete(this);
   }
 
@@ -331,6 +335,10 @@ export class Context {
 
   firstRootPath(): string | undefined {
     return allRootPaths(this._clientInfo)[0];
+  }
+
+  hasExplicitRoots(): boolean {
+    return this._clientInfo.roots.length > 0;
   }
 }
 
