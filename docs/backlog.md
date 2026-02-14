@@ -2,24 +2,26 @@
 
 ## Completed Tickets
 
-### TICKET-009: Comprehensive DOM Extractor Unit Tests
+### TICKET-011: DomState Unit Tests
 **Status:** COMPLETED
 **Priority:** HIGH
 **Completed:** 2026-02-13
 
-Implemented comprehensive unit tests for the AIDomBuilderInjection function covering all DOM extraction functionality. 43 tests verify noise stripping, attribute filtering, CSS class filtering, canonical ordering, ref stamping, shadow DOM traversal, iframe collection, SVG simplification, void elements, hidden elements, and HTML escaping.
+Implemented comprehensive unit tests for the DomState class covering all functionality including:
+- Three-tier state directory resolution (multiplexer mode, standalone mode, disabled mode)
+- Diff generation lifecycle and format validation
+- File naming and organization (dom.html, accessibility-tree.yaml, sequential diffs)
+- Cleanup and disposal edge cases
+- Error handling for page navigation and iframe failures
+- Pretty-printing integration
 
-**Key Results:**
-- 43 comprehensive unit tests
-- 100% test pass rate
-- All acceptance criteria met
-- Fixed SVG tag name comparison bug (lowercase vs uppercase)
-- Tests follow project coding standards
-- Test file lints cleanly
+**Test Results:**
+- 16 test cases, all passing
+- Execution time: ~945ms
+- Zero linting errors
 
-**Files Modified:**
-- `tests/mcp/dom-extractor.spec.ts` (comprehensive test suite)
-- `packages/playwright/src/mcp/browser/domExtractor.ts` (bug fix for SVG tag names)
+**Files Added:**
+- `tests/mcp/dom-state.spec.ts` (570 lines)
 
 ---
 
