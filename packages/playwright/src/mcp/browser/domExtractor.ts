@@ -178,6 +178,25 @@ export const AIDomBuilderInjection = (): { html: string, iframeRefs: string[] } 
         attrs.push([attr.name, attr.value]);
       }
 
+      // For form elements, use the live JS .value property (not the HTML attribute)
+      // because user input only updates the property, not the attribute.
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        const liveValue = (el as HTMLInputElement).value;
+        if (liveValue !== undefined && liveValue !== '') {
+          const idx = attrs.findIndex(a => a[0] === 'value');
+          if (idx >= 0)
+            attrs[idx] = ['value', liveValue];
+          else
+            attrs.push(['value', liveValue]);
+        }
+        // Capture checked state for checkboxes/radio buttons
+        if ((tag === 'INPUT') && ((el as HTMLInputElement).type === 'checkbox' || (el as HTMLInputElement).type === 'radio')) {
+          if ((el as HTMLInputElement).checked)
+            attrs.push(['checked', '']);
+        }
+      }
+
       // Sort by canonical order — keeps diffs stable across snapshots
       attrs.sort((a, b) => attrOrder(a[0]) - attrOrder(b[0]));
 
