@@ -1980,6 +1980,13 @@ Page:
         full: string
         incremental: string?
 
+    extractDomForAI:
+      internal: true
+      parameters:
+        timeout: float
+      returns:
+        html: string
+
     startJSCoverage:
       title: Start JS coverage
       group: configuration

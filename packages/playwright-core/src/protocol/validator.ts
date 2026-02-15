@@ -1474,6 +1474,12 @@ scheme.PageSnapshotForAIResult = tObject({
   full: tString,
   incremental: tOptional(tString),
 });
+scheme.PageExtractDomForAIParams = tObject({
+  timeout: tFloat,
+});
+scheme.PageExtractDomForAIResult = tObject({
+  html: tString,
+});
 scheme.PageStartJSCoverageParams = tObject({
   resetOnNavigation: tOptional(tBoolean),
   reportAnonymousScripts: tOptional(tBoolean),

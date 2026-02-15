@@ -859,6 +859,10 @@ export class Page extends ChannelOwner<channels.PageChannel> implements api.Page
   async _snapshotForAI(options: TimeoutOptions & { track?: string } = {}): Promise<{ full: string, incremental?: string }> {
     return await this._channel.snapshotForAI({ timeout: this._timeoutSettings.timeout(options), track: options.track });
   }
+
+  async _extractDomForAI(options: TimeoutOptions = {}): Promise<{ html: string }> {
+    return await this._channel.extractDomForAI({ timeout: this._timeoutSettings.timeout(options) });
+  }
 }
 
 export class BindingCall extends ChannelOwner<channels.BindingCallChannel> {

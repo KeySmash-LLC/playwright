@@ -1651,6 +1651,156 @@ export class InjectedScript {
     }
     return mIndex === matchers.length;
   }
+
+  extractDomForAI(): { html: string, iframeRefs: string[] } {
+    const SKIP_TAGS = new Set(['SCRIPT', 'STYLE', 'NOSCRIPT', 'TEMPLATE']);
+    const VOID_TAGS = new Set([
+      'AREA', 'BASE', 'BR', 'COL', 'EMBED', 'HR',
+      'IMG', 'INPUT', 'LINK', 'META', 'SOURCE', 'TRACK', 'WBR'
+    ]);
+    const SVG_NOISE_ATTRS = new Set(['d', 'points']);
+    const ATTR_ORDER: Record<string, number> = {
+      'id': 0, 'type': 1, 'name': 2, 'role': 3,
+      'href': 10, 'src': 11, 'action': 12, 'method': 13, 'for': 14,
+      'value': 20, 'placeholder': 21, 'required': 22, 'disabled': 23, 'checked': 24,
+      'selected': 25, 'multiple': 26, 'readonly': 27,
+      'class': 40, 'alt': 41, 'title': 42, 'target': 43, 'rel': 44,
+    };
+    const GENERATED_CLASS_PATTERNS = [
+      /^(css|sc|emotion|styled|jsx)-/,
+      /^_[a-zA-Z0-9]{5,}$/,
+      /[a-f0-9]{8,}/i,
+    ];
+
+    const html: string[] = [];
+    const iframeRefs: string[] = [];
+
+    const shouldSkipAttr = (name: string): boolean => {
+      if (name.startsWith('on')) return true;
+      if (name === 'style') return true;
+      if (name.startsWith('data-')) return true;
+      return false;
+    };
+
+    const attrOrder = (name: string): number => {
+      if (name in ATTR_ORDER) return ATTR_ORDER[name];
+      if (name.startsWith('aria-')) return 5;
+      return 30;
+    };
+
+    const filterClasses = (classStr: string): string => {
+      return classStr.split(/\s+/)
+        .filter(cls => cls && !GENERATED_CLASS_PATTERNS.some(p => p.test(cls)))
+        .join(' ');
+    };
+
+    const escapeHtml = (text: string): string => {
+      return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+
+    const escapeAttr = (value: string): string => {
+      return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+        .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    };
+
+    const serializeElement = (el: Element): void => {
+      const tag = el.tagName;
+      const tagLower = tag.toLowerCase();
+
+      // Skip noise elements
+      if (SKIP_TAGS.has(tag)) return;
+      if (tag === 'LINK' && el.getAttribute('rel') === 'stylesheet') return;
+
+      // Collect iframe refs for stitching later
+      if (tag === 'IFRAME') {
+        const ref = (el as any)._ariaRef?.ref;
+        if (ref) iframeRefs.push(ref);
+      }
+
+      // Opening tag
+      html.push(`<${tagLower}`);
+      serializeAttributes(el);
+      serializeRef(el);
+      html.push('>');
+
+      if (VOID_TAGS.has(tag)) return;
+
+      // Children (light DOM)
+      serializeChildren(el);
+
+      // Shadow DOM
+      if (el.shadowRoot) {
+        html.push('<!-- shadow-root -->');
+        serializeChildren(el.shadowRoot);
+        html.push('<!-- /shadow-root -->');
+      }
+
+      html.push(`</${tagLower}>`);
+    };
+
+    const serializeChildren = (parent: Element | ShadowRoot): void => {
+      for (let child = parent.firstChild; child; child = child.nextSibling) {
+        if (child.nodeType === Node.TEXT_NODE) {
+          const text = child.textContent || '';
+          if (text.trim())
+            html.push(escapeHtml(text));
+        } else if (child.nodeType === Node.ELEMENT_NODE) {
+          serializeElement(child as Element);
+        }
+      }
+    };
+
+    const serializeAttributes = (el: Element): void => {
+      const attrs: [string, string][] = [];
+      for (const attr of el.attributes) {
+        if (shouldSkipAttr(attr.name)) continue;
+        if (attr.name === 'ref') continue;
+        if (SVG_NOISE_ATTRS.has(attr.name) && (el.tagName === 'PATH' || el.tagName === 'POLYGON')) {
+          attrs.push([attr.name, '...']);
+          continue;
+        }
+        if (attr.name === 'class') {
+          const filtered = filterClasses(attr.value);
+          if (filtered)
+            attrs.push(['class', filtered]);
+          continue;
+        }
+        attrs.push([attr.name, attr.value]);
+      }
+
+      // For form elements, use the live JS .value property
+      const tag = el.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') {
+        const liveValue = (el as HTMLInputElement).value;
+        if (liveValue !== undefined && liveValue !== '') {
+          const idx = attrs.findIndex(a => a[0] === 'value');
+          if (idx >= 0)
+            attrs[idx] = ['value', liveValue];
+          else
+            attrs.push(['value', liveValue]);
+        }
+        if (tag === 'INPUT' && ((el as HTMLInputElement).type === 'checkbox' || (el as HTMLInputElement).type === 'radio')) {
+          if ((el as HTMLInputElement).checked)
+            attrs.push(['checked', '']);
+        }
+      }
+
+      attrs.sort((a, b) => attrOrder(a[0]) - attrOrder(b[0]));
+      for (const [name, value] of attrs)
+        html.push(` ${name}="${escapeAttr(value)}"`);
+    };
+
+    const serializeRef = (el: Element): void => {
+      const ref = (el as any)._ariaRef?.ref;
+      if (ref)
+        html.push(` ref="${ref}"`);
+    };
+
+    const body = this.document.body;
+    if (body)
+      serializeElement(body);
+    return { html: html.join(''), iframeRefs };
+  }
 }
 
 function oneLine(s: string): string {

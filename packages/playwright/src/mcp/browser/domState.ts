@@ -17,8 +17,6 @@
 import fs from 'fs';
 import path from 'path';
 import { diff } from 'playwright-core/lib/utilsBundle';
-import { callOnPageNoTrace } from './tools/utils';
-import { AIDomBuilderInjection } from './domExtractor';
 import { prettyPrintHtml } from './domPrettyPrint';
 import type { Page } from '../../../../playwright-core/src/client/page';
 import type { Context } from './context';
@@ -53,27 +51,18 @@ export class DomState {
     ariaSnapshot: string,
   ): Promise<DomStateResult | undefined> {
     // 1. Resolve workspace directory — bail early if no workspace root.
-    //    Don't run page.evaluate() if we have nowhere to write files.
     const stateDir = await this._ensureStateDir(context);
     if (!stateDir)
       return undefined;
 
-    // 2. Stamp aria refs on DOM elements in the main world.
-    //    _ariaRef is set by captureSnapshot() in the utility world, but page.evaluate()
-    //    runs in the main world where those JS properties aren't visible. Bridge the gap
-    //    by using the aria-ref selector engine to find each element and set _ariaRef.
-    try {
-      await stampRefsInMainWorld(page, ariaSnapshot);
-    } catch {
-      // Non-fatal — extraction works without refs, just no cross-referencing
-    }
-
-    // 3. Extract DOM from browser.
-    //    extractFullDom() runs AIDomBuilderInjection in main frame via page.evaluate(),
-    //    then stitches iframe content.
+    // 2. Extract DOM from browser via dedicated protocol method.
+    //    extractDomForAI runs in the utility world on the server side:
+    //    stamps _ariaRef via snapshot, then runs InjectedScript.extractDomForAI(),
+    //    stitches iframe content, and returns complete HTML.
     let rawHtml: string;
     try {
-      rawHtml = await extractFullDom(page);
+      const result = await page._extractDomForAI();
+      rawHtml = result.html;
     } catch {
       return undefined;  // page navigated, closed, etc.
     }
@@ -123,6 +112,10 @@ export class DomState {
     if (this._stateDir)
       return this._stateDir;
 
+    // Explicit kill switch — multiplexer sets this for domState:false instances
+    if (process.env.PW_DOM_STATE_DISABLED)
+      return undefined;
+
     const instanceId = process.env.PW_DOM_STATE_INSTANCE_ID;
     const muxWorkspace = process.env.PW_DOM_STATE_WORKSPACE;
 
@@ -151,86 +144,6 @@ export class DomState {
       this._stateDir = undefined;
     }
   }
-}
-
-/**
- * Bridge refs from utility world to main world.
- * The aria snapshot stamps _ariaRef on elements in the utility world,
- * but page.evaluate() runs in the main world. Use the aria-ref selector
- * engine (which resolves in the utility world) to find each element,
- * then set _ariaRef in the main world so AIDomBuilderInjection can read it.
- */
-async function stampRefsInMainWorld(page: Page, ariaSnapshot: string): Promise<void> {
-  const refs = [...ariaSnapshot.matchAll(/\[ref=((?:f\d+)?e\d+)\]/g)].map(m => m[1]);
-  await Promise.all(refs.map(async ref => {
-    try {
-      await callOnPageNoTrace(page, p =>
-        p.locator(`aria-ref=${ref}`).evaluate((el, r) => {
-          (el as any)._ariaRef = { ref: r };
-        }, ref, { timeout: 1000 })
-      );
-    } catch {
-      // Element no longer exists or couldn't be resolved — skip
-    }
-  }));
-}
-
-/**
- * Extract full DOM from main frame and stitch iframe content.
- * Runs AIDomBuilderInjection in each frame and inlines the results.
- */
-async function extractFullDom(page: Page): Promise<string> {
-  // 1. Run AIDomBuilder in main frame
-  const main = await callOnPageNoTrace(page, p => p.evaluate(AIDomBuilderInjection)) as { html: string, iframeRefs: string[] };
-  let html = main.html;
-
-  // 2. For each iframe ref the builder found, enter the frame and build
-  for (const ref of main.iframeRefs) {
-    try {
-      // Look up the <iframe> element using the aria-ref selector (resolves via utility world)
-      const iframeHandle = await callOnPageNoTrace(page, p =>
-        p.locator(`aria-ref=${ref}`).elementHandle({ timeout: 1000 })
-      );
-      if (!iframeHandle)
-        continue;
-
-      const frame = await iframeHandle.contentFrame();
-      if (!frame)
-        continue;
-
-      // Run the same AIDomBuilder inside the child frame
-      const child = await frame.evaluate(AIDomBuilderInjection) as { html: string, iframeRefs: string[] };
-
-      // Stitch child HTML into the parent's <iframe> tag.
-      // Use regex because the iframe tag has other attributes (id, src, etc.) before ref.
-      const iframePattern = new RegExp(`(<iframe[^>]*\\sref="${ref}"[^>]*>)(</iframe>)`);
-      html = html.replace(iframePattern, `$1\n<!-- BEGIN IFRAME ${ref} -->\n${child.html}\n<!-- END IFRAME ${ref} -->\n$2`);
-
-      // Recurse: if the child frame had iframes too, stitch those
-      for (const childRef of child.iframeRefs) {
-        try {
-          const nestedHandle = await frame.locator(`[data-pw-ref="${childRef}"]`).elementHandle({ timeout: 1000 }).catch(() => null)
-            ?? await frame.$(`iframe`);
-          if (!nestedHandle)
-            continue;
-
-          const nestedFrame = await nestedHandle.contentFrame();
-          if (!nestedFrame)
-            continue;
-
-          const nested = await nestedFrame.evaluate(AIDomBuilderInjection) as { html: string, iframeRefs: string[] };
-          const nestedPattern = new RegExp(`(<iframe[^>]*\\sref="${childRef}"[^>]*>)(</iframe>)`);
-          html = html.replace(nestedPattern, `$1\n<!-- BEGIN IFRAME ${childRef} -->\n${nested.html}\n<!-- END IFRAME ${childRef} -->\n$2`);
-        } catch {
-          // Nested frame unavailable
-        }
-      }
-    } catch {
-      // Frame navigated, detached, or cross-origin — leave empty
-    }
-  }
-
-  return html;
 }
 
 /**

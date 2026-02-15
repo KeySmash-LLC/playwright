@@ -2119,6 +2119,7 @@ export interface PageChannel extends PageEventTarget, EventTargetChannel {
   pdf(params: PagePdfParams, progress?: Progress): Promise<PagePdfResult>;
   requests(params?: PageRequestsParams, progress?: Progress): Promise<PageRequestsResult>;
   snapshotForAI(params: PageSnapshotForAIParams, progress?: Progress): Promise<PageSnapshotForAIResult>;
+  extractDomForAI(params: PageExtractDomForAIParams, progress?: Progress): Promise<PageExtractDomForAIResult>;
   startJSCoverage(params: PageStartJSCoverageParams, progress?: Progress): Promise<PageStartJSCoverageResult>;
   stopJSCoverage(params?: PageStopJSCoverageParams, progress?: Progress): Promise<PageStopJSCoverageResult>;
   startCSSCoverage(params: PageStartCSSCoverageParams, progress?: Progress): Promise<PageStartCSSCoverageResult>;
@@ -2573,6 +2574,15 @@ export type PageSnapshotForAIOptions = {
 export type PageSnapshotForAIResult = {
   full: string,
   incremental?: string,
+};
+export type PageExtractDomForAIParams = {
+  timeout: number,
+};
+export type PageExtractDomForAIOptions = {
+
+};
+export type PageExtractDomForAIResult = {
+  html: string,
 };
 export type PageStartJSCoverageParams = {
   resetOnNavigation?: boolean,

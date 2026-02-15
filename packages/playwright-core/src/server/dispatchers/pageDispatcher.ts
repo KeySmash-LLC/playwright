@@ -332,6 +332,10 @@ export class PageDispatcher extends Dispatcher<Page, channels.PageChannel, Brows
     return await this._page.snapshotForAI(progress, params);
   }
 
+  async extractDomForAI(params: channels.PageExtractDomForAIParams, progress: Progress): Promise<channels.PageExtractDomForAIResult> {
+    return await this._page.extractDomForAI(progress);
+  }
+
   async bringToFront(params: channels.PageBringToFrontParams, progress: Progress): Promise<void> {
     await progress.race(this._page.bringToFront());
   }

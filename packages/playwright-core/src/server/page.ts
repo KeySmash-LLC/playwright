@@ -867,6 +867,46 @@ export class Page extends SdkObject<PageEventMap> {
     const snapshot = await snapshotFrameForAI(progress, this.mainFrame(), options);
     return { full: snapshot.full.join('\n'), incremental: snapshot.incremental?.join('\n') };
   }
+
+  async extractDomForAI(progress: Progress): Promise<{ html: string }> {
+    // 1. Stamp _ariaRef on elements by running the snapshot logic.
+    //    This makes refs available in the utility world for our extractor.
+    await snapshotFrameForAI(progress, this.mainFrame(), {});
+
+    // 2. Extract DOM from main frame via injected script in utility world.
+    const main = await extractDomFrameForAI(progress, this.mainFrame());
+
+    // 3. Stitch iframe content into the parent HTML.
+    let html = main.html;
+    for (const ref of main.iframeRefs) {
+      try {
+        const childFrame = await resolveIframeByRef(progress, this.mainFrame(), ref);
+        if (!childFrame)
+          continue;
+
+        const child = await extractDomFrameForAI(progress, childFrame);
+        const iframePattern = new RegExp(`(<iframe[^>]*\\sref="${ref}"[^>]*>)(</iframe>)`);
+        html = html.replace(iframePattern, `$1\n<!-- BEGIN IFRAME ${ref} -->\n${child.html}\n<!-- END IFRAME ${ref} -->\n$2`);
+
+        // Recurse one level: nested iframes inside child frames.
+        for (const childRef of child.iframeRefs) {
+          try {
+            const nestedFrame = await resolveIframeByRef(progress, childFrame, childRef);
+            if (!nestedFrame)
+              continue;
+            const nested = await extractDomFrameForAI(progress, nestedFrame);
+            const nestedPattern = new RegExp(`(<iframe[^>]*\\sref="${childRef}"[^>]*>)(</iframe>)`);
+            html = html.replace(nestedPattern, `$1\n<!-- BEGIN IFRAME ${childRef} -->\n${nested.html}\n<!-- END IFRAME ${childRef} -->\n$2`);
+          } catch {
+            // Nested frame unavailable
+          }
+        }
+      } catch {
+        // Frame navigated, detached, or cross-origin
+      }
+    }
+    return { html };
+  }
 }
 
 export const WorkerEvent = {
@@ -1053,6 +1093,19 @@ async function snapshotFrameRefForAI(progress: Progress, parentFrame: frames.Fra
   } catch {
     return { full: [] };
   }
+}
+
+async function extractDomFrameForAI(progress: Progress, frame: frames.Frame): Promise<{ html: string, iframeRefs: string[] }> {
+  const context = await progress.race(frame._utilityContext());
+  const injectedScript = await progress.race(context.injectedScript());
+  return await progress.race(injectedScript.evaluate(injected => injected.extractDomForAI()));
+}
+
+async function resolveIframeByRef(progress: Progress, parentFrame: frames.Frame, ref: string): Promise<frames.Frame | null> {
+  const frameSelector = `aria-ref=${ref} >> internal:control=enter-frame`;
+  const frameBodySelector = `${frameSelector} >> body`;
+  const child = await progress.race(parentFrame.selectors.resolveFrameForSelector(frameBodySelector, { strict: true }));
+  return child?.frame ?? null;
 }
 
 function ensureArrayLimit<T>(array: T[], limit: number): T[] {
