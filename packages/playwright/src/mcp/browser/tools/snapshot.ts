@@ -18,6 +18,7 @@ import { z } from 'playwright-core/lib/mcpBundle';
 import { formatObject } from 'playwright-core/lib/utils';
 
 import { defineTabTool, defineTool } from './tool';
+import { prettyPrintHtml } from '../domPrettyPrint';
 
 const snapshot = defineTool({
   capability: 'core',
@@ -34,6 +35,49 @@ const snapshot = defineTool({
   handle: async (context, params, response) => {
     await context.ensureTab();
     response.setIncludeFullSnapshot(params.filename);
+  },
+});
+
+const domSnapshot = defineTool({
+  capability: 'core',
+  schema: {
+    name: 'browser_dom_snapshot',
+    title: 'DOM snapshot',
+    description: 'Return the ref-annotated DOM HTML of the current page. Unlike browser_snapshot (which returns an accessibility tree), this returns the actual page DOM with CSS classes, attributes, and ref annotations matching the accessibility snapshot refs. Use this when you need real CSS selectors.',
+    inputSchema: z.object({}),
+    type: 'readOnly',
+  },
+
+  handle: async (context, _params, response) => {
+    await context.ensureTab();
+    const tab = context.currentTabOrDie();
+    // Force a fresh aria snapshot to stamp ref attributes on DOM nodes.
+    await tab.captureSnapshot(undefined);
+    // Stamp live JS property values onto HTML attributes so the serialized
+    // DOM reflects the current form state (not just initial attributes).
+    // Without this, dynamically-filled inputs show value="" in the HTML.
+    await tab.page.evaluate(() => {
+      for (const el of document.querySelectorAll('input, textarea')) {
+        const input = el as HTMLInputElement | HTMLTextAreaElement;
+        if (input.value)
+          input.setAttribute('value', input.value);
+        if ('checked' in input && (input as HTMLInputElement).checked)
+          input.setAttribute('checked', '');
+      }
+      for (const el of document.querySelectorAll('select')) {
+        const select = el as HTMLSelectElement;
+        for (const opt of select.options) {
+          if (opt.selected)
+            opt.setAttribute('selected', '');
+          else
+            opt.removeAttribute('selected');
+        }
+      }
+    });
+    // Extract the ref-annotated, stripped, pretty-printed DOM.
+    const result = await tab.page._extractDomForAI();
+    const dom = prettyPrintHtml(result.html);
+    response.addTextResult(dom);
   },
 });
 
@@ -217,6 +261,7 @@ const uncheck = defineTabTool({
 
 export default [
   snapshot,
+  domSnapshot,
   click,
   drag,
   hover,

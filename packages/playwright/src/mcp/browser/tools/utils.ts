@@ -29,7 +29,6 @@ export async function waitForCompletion<R>(tab: Tab, callback: () => Promise<R>)
   let result: R;
   try {
     result = await callback();
-    await tab.waitForTimeout(500);
   } finally {
     disposeListeners();
   }
@@ -40,6 +39,7 @@ export async function waitForCompletion<R>(tab: Tab, callback: () => Promise<R>)
     return result;
   }
 
+  // Wait for in-flight network requests to finish (max 2s), no extra sleep.
   const promises: Promise<any>[] = [];
   for (const request of requests) {
     if (['document', 'stylesheet', 'script', 'xhr', 'fetch'].includes(request.resourceType()))
@@ -47,10 +47,10 @@ export async function waitForCompletion<R>(tab: Tab, callback: () => Promise<R>)
     else
       promises.push(request.response().catch(() => {}));
   }
-  const timeout = new Promise<void>(resolve => setTimeout(resolve, 5000));
-  await Promise.race([Promise.all(promises), timeout]);
-  if (requests.length)
-    await tab.waitForTimeout(500);
+  if (promises.length) {
+    const timeout = new Promise<void>(resolve => setTimeout(resolve, 2000));
+    await Promise.race([Promise.all(promises), timeout]);
+  }
 
   return result;
 }

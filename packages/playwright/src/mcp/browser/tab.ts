@@ -418,14 +418,7 @@ export class Tab extends EventEmitter<TabEventsInterface> {
   }
 
   async waitForTimeout(time: number) {
-    if (this._javaScriptBlocked()) {
-      await new Promise(f => setTimeout(f, time));
-      return;
-    }
-
-    await callOnPageNoTrace(this.page, page => {
-      return page.evaluate(() => new Promise(f => setTimeout(f, 1000))).catch(() => {});
-    });
+    await new Promise(f => setTimeout(f, time));
   }
 }
 
