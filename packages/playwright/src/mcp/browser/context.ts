@@ -310,8 +310,13 @@ export class Context {
       (browserContext as any)._setAllowedDirectories(allRootPaths(this._clientInfo));
     }
     await this._setupRequestInterception(browserContext);
-    for (const page of browserContext.pages())
-      this._onPageCreated(page);
+    // Register existing pages as tabs — but skip pages that belonged to the
+    // host app before this MCP session (e.g. Electron's main window).
+    const skipPages = result.skipPages;
+    for (const page of browserContext.pages()) {
+      if (!skipPages?.has(page))
+        this._onPageCreated(page);
+    }
     browserContext.on('page', page => this._onPageCreated(page));
     if (this.config.saveTrace) {
       await (browserContext.tracing as Tracing).start({

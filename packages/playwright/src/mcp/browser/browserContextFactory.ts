@@ -45,6 +45,8 @@ export function contextFactory(config: FullConfig): BrowserContextFactory {
 export type BrowserContextFactoryResult = {
   browserContext: playwright.BrowserContext;
   close: () => Promise<void>;
+  /** Pages that existed before the MCP session — skip registering them as tabs. */
+  skipPages?: Set<playwright.Page>;
 };
 
 type CreateContextOptions = {
@@ -163,7 +165,32 @@ class CdpContextFactory extends BaseContextFactory {
   }
 
   protected override async _doCreateContext(browser: playwright.Browser): Promise<playwright.BrowserContext> {
-    return this.config.browser.isolated ? await browser.newContext() : browser.contexts()[0];
+    if (this.config.browser.isolated) {
+      try {
+        return await browser.newContext();
+      } catch {
+        // Electron doesn't support Target.createBrowserContext.
+        // Fall through: use the default context with skipPages so we
+        // don't navigate the host app's existing pages.
+      }
+    }
+    return browser.contexts()[0];
+  }
+
+  // Override createContext to inject skipPages for Electron CDP fallback.
+  override async createContext(clientInfo: ClientInfo, abortSignal: AbortSignal, options: CreateContextOptions): Promise<BrowserContextFactoryResult> {
+    const browser = await this._obtainBrowser(clientInfo, options);
+    // Snapshot pages that exist BEFORE we set up — these belong to the host app.
+    const existingPages = this.config.browser.isolated
+      ? new Set(browser.contexts()[0]?.pages() ?? [])
+      : undefined;
+
+    const browserContext = await this._doCreateContext(browser, clientInfo);
+    return {
+      browserContext,
+      close: async () => {},
+      skipPages: existingPages,
+    };
   }
 }
 
