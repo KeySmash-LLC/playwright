@@ -129,8 +129,16 @@ export class Context {
 
   async ensureTab(): Promise<Tab> {
     const { browserContext } = await this._ensureBrowserContext();
-    if (!this._currentTab)
-      await browserContext.newPage();
+    if (!this._currentTab) {
+      try {
+        await browserContext.newPage();
+      } catch {
+        // Electron doesn't support Target.createTarget. If there are
+        // existing tabs (e.g. a webview page), use the last one.
+        if (this._tabs.length > 0)
+          this._currentTab = this._tabs[this._tabs.length - 1];
+      }
+    }
     return this._currentTab!;
   }
 

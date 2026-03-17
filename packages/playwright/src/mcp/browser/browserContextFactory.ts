@@ -180,16 +180,26 @@ class CdpContextFactory extends BaseContextFactory {
   // Override createContext to inject skipPages for Electron CDP fallback.
   override async createContext(clientInfo: ClientInfo, abortSignal: AbortSignal, options: CreateContextOptions): Promise<BrowserContextFactoryResult> {
     const browser = await this._obtainBrowser(clientInfo, options);
-    // Snapshot pages that exist BEFORE we set up — these belong to the host app.
-    const existingPages = this.config.browser.isolated
-      ? new Set(browser.contexts()[0]?.pages() ?? [])
-      : undefined;
-
     const browserContext = await this._doCreateContext(browser, clientInfo);
+
+    // In Electron CDP mode: skip the host app's page (localhost dev server)
+    // but keep webview pages so the walker can use them as automation targets.
+    let skipPages: Set<playwright.Page> | undefined;
+    if (this.config.browser.isolated) {
+      skipPages = new Set<playwright.Page>();
+      for (const page of browserContext.pages()) {
+        const url = page.url();
+        // Skip the Electron renderer (React app) and blank pages
+        if (url.startsWith('http://localhost:') || url === 'about:blank' || url === '') {
+          skipPages.add(page);
+        }
+      }
+    }
+
     return {
       browserContext,
       close: async () => {},
-      skipPages: existingPages,
+      skipPages,
     };
   }
 }
