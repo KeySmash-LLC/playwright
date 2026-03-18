@@ -182,14 +182,27 @@ class CdpContextFactory extends BaseContextFactory {
     const browser = await this._obtainBrowser(clientInfo, options);
     const browserContext = await this._doCreateContext(browser, clientInfo);
 
-    // In Electron CDP mode: skip the host app's page (localhost dev server)
-    // but keep webview pages so the walker can use them as automation targets.
     let skipPages: Set<playwright.Page> | undefined;
-    if (this.config.browser.isolated) {
+    if (this.config.browser.targetUrl) {
+      // Electron mode with target filtering: keep ONLY the page matching our target URL.
+      // The URL contains a baked-in wcid like "about:blank?wcid=42" set by Electron's
+      // ViewManager when creating the WebContentsView.
+      const target = this.config.browser.targetUrl;
+      skipPages = new Set<playwright.Page>();
+      for (const page of browserContext.pages()) {
+        if (page.url() !== target)
+          skipPages.add(page);
+      }
+      const kept = browserContext.pages().length - skipPages.size;
+      if (kept === 0)
+        console.error(`[pw-mcp] WARNING: --target-url="${target}" matched 0 pages out of ${browserContext.pages().length}`);
+      else
+        console.error(`[pw-mcp] target-url matched ${kept} page(s), skipping ${skipPages.size}`);
+    } else if (this.config.browser.isolated) {
+      // Legacy Electron fallback: skip the host app's page (localhost dev server)
       skipPages = new Set<playwright.Page>();
       for (const page of browserContext.pages()) {
         const url = page.url();
-        // Skip the Electron renderer (React app) and blank pages
         if (url.startsWith('http://localhost:') || url === 'about:blank' || url === '') {
           skipPages.add(page);
         }

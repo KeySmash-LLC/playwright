@@ -72,6 +72,14 @@ export type Config = {
     cdpEndpoint?: string;
 
     /**
+     * When connecting via CDP (e.g. to Electron), filter to only the page whose URL matches this value exactly.
+     * All other pages are added to the skipPages set so Playwright ignores them.
+     * Useful for targeting a specific WebContentsView whose URL contains a baked-in ID
+     * (e.g. "about:blank?wcid=42").
+     */
+    targetUrl?: string;
+
+    /**
      * CDP headers to send with the connect request.
      */
     cdpHeaders?: Record<string, string>;

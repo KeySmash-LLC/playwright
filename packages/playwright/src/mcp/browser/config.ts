@@ -56,6 +56,7 @@ export type CLIOptions = {
   initScript?: string[];
   initPage?: string[];
   isolated?: boolean;
+  targetUrl?: string;
   imageResponses?: 'allow' | 'omit';
   outputDir?: string;
   outputMode?: 'file' | 'stdout';
@@ -125,6 +126,7 @@ export type FullConfig = Config & {
     launchOptions: NonNullable<BrowserUserConfig['launchOptions']>;
     contextOptions: NonNullable<BrowserUserConfig['contextOptions']>;
     isolated: boolean;
+    targetUrl?: string;
   },
   console: {
     level: 'error' | 'warning' | 'info' | 'debug';
@@ -286,6 +288,7 @@ export function configFromCLIOptions(cliOptions: CLIOptions): Config & { configF
       cdpEndpoint: cliOptions.cdpEndpoint,
       cdpHeaders: cliOptions.cdpHeader,
       cdpTimeout: cliOptions.cdpTimeout,
+      targetUrl: cliOptions.targetUrl,
       initPage: cliOptions.initPage,
       initScript: cliOptions.initScript,
     },
@@ -353,6 +356,7 @@ function configFromEnv(): Config & { configFile?: string } {
   if (initScript)
     options.initScript = [initScript];
   options.isolated = envToBoolean(process.env.PLAYWRIGHT_MCP_ISOLATED);
+  options.targetUrl = envToString(process.env.PLAYWRIGHT_MCP_TARGET_URL);
   if (process.env.PLAYWRIGHT_MCP_IMAGE_RESPONSES)
     options.imageResponses = enumParser<'allow' | 'omit'>('--image-responses', ['allow', 'omit'], process.env.PLAYWRIGHT_MCP_IMAGE_RESPONSES);
   options.chromiumSandbox = envToBoolean(process.env.PLAYWRIGHT_MCP_CHROMIUM_SANDBOX);
