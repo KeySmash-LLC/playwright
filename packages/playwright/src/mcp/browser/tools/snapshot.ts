@@ -49,10 +49,13 @@ const domSnapshot = defineTool({
   },
 
   handle: async (context, _params, response) => {
+    const t0 = performance.now();
     await context.ensureTab();
     const tab = context.currentTabOrDie();
+    const t1 = performance.now();
     // Force a fresh aria snapshot to stamp ref attributes on DOM nodes.
     await tab.captureSnapshot(undefined);
+    const t2 = performance.now();
     // Stamp live JS property values onto HTML attributes so the serialized
     // DOM reflects the current form state (not just initial attributes).
     // Without this, dynamically-filled inputs show value="" in the HTML.
@@ -74,9 +77,14 @@ const domSnapshot = defineTool({
         }
       }
     });
+    const t3 = performance.now();
     // Extract the ref-annotated, stripped, pretty-printed DOM.
     const result = await tab.page._extractDomForAI();
+    const t4 = performance.now();
     const dom = prettyPrintHtml(result.html);
+    const t5 = performance.now();
+    const fs = await import('fs');
+    fs.appendFileSync('/tmp/dom_snapshot_profile.log', `ensureTab=${(t1-t0).toFixed(1)}ms ariaSnap=${(t2-t1).toFixed(1)}ms formStamp=${(t3-t2).toFixed(1)}ms extract=${(t4-t3).toFixed(1)}ms prettyPrint=${(t5-t4).toFixed(1)}ms total=${(t5-t0).toFixed(1)}ms html=${(result.html.length/1024).toFixed(0)}kB\n`);
     response.addTextResult(dom);
   },
 });
@@ -259,9 +267,47 @@ const uncheck = defineTabTool({
   },
 });
 
+const domSnapshotRaw = defineTool({
+  capability: 'core',
+  schema: {
+    name: 'browser_dom_snapshot_raw',
+    title: 'DOM snapshot (raw)',
+    description: 'Return the ref-annotated DOM HTML without pretty-printing. Faster than browser_dom_snapshot — use when the consumer parses the HTML programmatically and does not need human-readable formatting.',
+    inputSchema: z.object({}),
+    type: 'readOnly',
+  },
+
+  handle: async (context, _params, response) => {
+    await context.ensureTab();
+    const tab = context.currentTabOrDie();
+    await tab.captureSnapshot(undefined);
+    await tab.page.evaluate(() => {
+      for (const el of document.querySelectorAll('input, textarea')) {
+        const input = el as HTMLInputElement | HTMLTextAreaElement;
+        if (input.value)
+          input.setAttribute('value', input.value);
+        if ('checked' in input && (input as HTMLInputElement).checked)
+          input.setAttribute('checked', '');
+      }
+      for (const el of document.querySelectorAll('select')) {
+        const select = el as HTMLSelectElement;
+        for (const opt of select.options) {
+          if (opt.selected)
+            opt.setAttribute('selected', '');
+          else
+            opt.removeAttribute('selected');
+        }
+      }
+    });
+    const result = await tab.page._extractDomForAI();
+    response.addTextResult(result.html);
+  },
+});
+
 export default [
   snapshot,
   domSnapshot,
+  domSnapshotRaw,
   click,
   drag,
   hover,
